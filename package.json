@@ -1,0 +1,13 @@
+{
+  "name": "ai-news-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "agent": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@notionhq/client": "^2.2.15"
+  }
+}
