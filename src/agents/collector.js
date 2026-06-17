@@ -1,24 +1,98 @@
 // src/agents/collector.js
 import { runAgent } from '../lib/claude.js'
 
-/** @type {import('@anthropic-ai/sdk').Tool[]} */
-const WEB_SEARCH_TOOL = [
-  {
-    type: 'web_search_20250305',
-    name: 'web_search',
-  },
+const RSS_FEEDS = [
+  { url: 'https://techcrunch.com/category/artificial-intelligence/feed/', name: 'TechCrunch' },
+  { url: 'https://www.technologyreview.com/feed/', name: 'MIT Technology Review' },
+  { url: 'https://hnrss.org/frontpage?q=AI+LLM', name: 'Hacker News' },
+  { url: 'https://feeds.feedburner.com/venturebeat/SZYF', name: 'VentureBeat' },
+  { url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml', name: 'The Verge' },
 ]
 
-const SYSTEM = `당신은 AI/ML 업계 전문 뉴스 수집 에이전트입니다.
-오늘의 AI 뉴스를 수집하고 아래 JSON 형식으로만 응답하세요.
+/** XML 태그 텍스트 내용 추출 (CDATA 처리 포함) */
+function extractTag(xml, tag) {
+  const cdata = xml.match(new RegExp(`<${tag}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*<\\/${tag}>`, 'i'))
+  if (cdata) return cdata[1].trim()
+  const plain = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'))
+  return plain ? plain[1].trim() : ''
+}
+
+/** Atom <link href="..."/> 추출 — rel="alternate" 우선 */
+function extractAtomLink(block) {
+  const re = /<link([^>]*)\/?>/gi
+  let m
+  while ((m = re.exec(block)) !== null) {
+    const attrs = m[1]
+    if (/rel=["']alternate["']/i.test(attrs)) {
+      const href = attrs.match(/href=["']([^"']+)["']/i)
+      if (href) return href[1]
+    }
+  }
+  const fallback = block.match(/<link[^>]+href=["']([^"']+)["'][^>]*\/?>/i)
+  return fallback ? fallback[1] : ''
+}
+
+/** HTML 태그 제거 및 기본 엔티티 디코딩 */
+function stripHtml(str) {
+  return str
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#\d+;/g, '').replace(/&[a-z]+;/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** RSS 2.0 / Atom XML 파싱 → 아이템 배열 반환 */
+function parseItems(xml, feedName) {
+  const isAtom = /<feed\b/i.test(xml)
+  const blockTag = isAtom ? 'entry' : 'item'
+  const re = new RegExp(`<${blockTag}[^>]*>([\\s\\S]*?)<\\/${blockTag}>`, 'gi')
+  const items = []
+  let m
+
+  while ((m = re.exec(xml)) !== null) {
+    const block = m[1]
+    const title = stripHtml(extractTag(block, 'title'))
+    const link = isAtom
+      ? (extractAtomLink(block) || extractTag(block, 'link'))
+      : (extractTag(block, 'link') || extractAtomLink(block))
+    const desc = stripHtml(
+      extractTag(block, 'description') || extractTag(block, 'summary') || extractTag(block, 'content')
+    ).slice(0, 250)
+    const rawDate = extractTag(block, 'pubDate') || extractTag(block, 'published') || extractTag(block, 'updated')
+
+    if (!title || !link) continue
+    items.push({ title, link, desc, pubDate: rawDate ? new Date(rawDate) : new Date(0), source: feedName })
+  }
+
+  return items
+}
+
+async function fetchFeed({ url, name }) {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 AI-News-Agent/1.0' },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const xml = await res.text()
+    return parseItems(xml, name)
+  } catch (e) {
+    console.warn(`  ⚠️  ${name} 실패:`, e.message)
+    return []
+  }
+}
+
+const SYSTEM = `당신은 AI/ML 업계 전문 뉴스 에디터입니다.
+제공된 RSS 피드 원문을 분석해 아래 JSON 형식으로만 응답하세요.
 
 응답 형식 (JSON만, 마크다운 코드블록 없이):
 {
   "items": [
     {
-      "title": "뉴스 제목",
+      "title": "뉴스 제목 (한국어로 번역)",
       "summary": "2~3문장 한국어 요약",
-      "url": "https://...",
+      "url": "원본 링크",
       "source": "출처 이름",
       "tags": ["LLM", "OpenAI"],
       "importance": "high" | "medium" | "low"
@@ -31,34 +105,47 @@ importance 기준:
 - medium: 연구 논문, 기업 전략, 제품 업데이트
 - low: 일반 활용 사례, 칼럼
 
-최소 8개, 최대 15개 수집. 반드시 JSON만 반환.`
+중복 뉴스는 제거하고 최소 5개, 최대 15개 선별. 반드시 JSON만 반환.`
 
 /**
- * 뉴스 수집 서브에이전트
+ * RSS 피드에서 뉴스 수집 후 Claude로 요약/분류
  * @returns {Promise<import('../types/index.js').NewsItem[]>}
  */
 export async function collectNews() {
-  console.log('📡 [Collector] 뉴스 수집 시작...')
+  console.log('📡 [Collector] RSS 피드 수집 중...')
 
-  const today = new Date().toLocaleDateString('ko-KR', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const all = (await Promise.all(RSS_FEEDS.map(fetchFeed))).flat()
+  console.log(`  📥 전체 수집: ${all.length}건`)
 
-  const raw = await runAgent({
-    system: SYSTEM,
-    prompt: `오늘(${today}) 기준 최신 AI/ML 뉴스를 수집해주세요.
-검색 키워드: "AI news today", "LLM 2025", "OpenAI OR Anthropic OR Google DeepMind OR Meta AI"
-한국 AI 동향도 포함해주세요: "한국 AI", "네이버 AI", "카카오 AI"`,
-    tools: WEB_SEARCH_TOOL,
-  })
+  // 24시간 필터, 부족하면 72시간으로 확장
+  const now = Date.now()
+  let cutoffH = 24
+  let recent = all.filter(i => now - i.pubDate.getTime() < cutoffH * 3_600_000)
+
+  if (recent.length < 5) {
+    cutoffH = 72
+    recent = all.filter(i => now - i.pubDate.getTime() < cutoffH * 3_600_000)
+    console.log(`  ⏰ 24시간 기사 부족 → 72시간으로 확장 (${recent.length}건)`)
+  }
+
+  if (recent.length === 0) throw new Error('RSS 피드에서 수집된 기사가 없습니다')
+
+  // 최대 30건을 Claude에 전달
+  const batch = recent.slice(0, 30)
+  const feedText = batch
+    .map((item, i) => `[${i + 1}] [${item.source}] ${item.title}\nURL: ${item.link}\n${item.desc}`)
+    .join('\n\n')
+
+  const prompt = `다음은 RSS 피드에서 수집한 최신 AI/ML 뉴스 ${batch.length}건입니다. 중요도에 따라 선별하고 한국어로 요약해주세요.\n\n${feedText}`
+
+  const raw = await runAgent({ system: SYSTEM, prompt })
 
   try {
-    // JSON 추출 (Claude가 가끔 앞뒤에 텍스트를 붙이는 경우 대비)
     const jsonMatch = raw.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error('JSON not found in response')
     const parsed = JSON.parse(jsonMatch[0])
     const items = parsed.items ?? []
-    console.log(`  ✅ ${items.length}개 뉴스 수집 완료`)
+    console.log(`  ✅ ${items.length}개 뉴스 선별 완료`)
     return items
   } catch (e) {
     console.error('  ❌ JSON 파싱 실패:', e.message)

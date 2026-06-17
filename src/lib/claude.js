@@ -35,9 +35,7 @@ export async function runAgent({ system, prompt, tools = [], toolHandlers = {}, 
       // 최종 텍스트 반환
       const textBlock = response.content.find(b => b.type === 'text')
       return textBlock?.text ?? ''
-    }
-
-    if (response.stop_reason === 'tool_use') {
+    } else if (response.stop_reason === 'tool_use') {
       const toolResults = []
 
       for (const block of response.content) {
@@ -57,6 +55,10 @@ export async function runAgent({ system, prompt, tools = [], toolHandlers = {}, 
       }
 
       messages.push({ role: 'user', content: toolResults })
+    } else {
+      // max_tokens 등 기타 stop_reason — 지금까지의 텍스트 반환
+      const textBlock = response.content.find(b => b.type === 'text')
+      return textBlock?.text ?? ''
     }
   }
 }
