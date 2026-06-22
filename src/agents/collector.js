@@ -159,6 +159,7 @@ export async function collectNews() {
     system: SYSTEM,
     prompt,
     tools: COLLECTOR_TOOLS,
+    toolChoice: { type: 'any' },
     toolHandlers: {
       process_news_items: (input) => {
         capturedItems = input.items

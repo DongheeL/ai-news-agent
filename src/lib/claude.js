@@ -15,8 +15,9 @@ export const client = new Anthropic({
  * @param {string} [params.model]
  * @returns {Promise<string>}
  */
-export async function runAgent({ system, prompt, tools = [], toolHandlers = {}, model = 'claude-sonnet-4-6' }) {
+export async function runAgent({ system, prompt, tools = [], toolHandlers = {}, model = 'claude-sonnet-4-6', toolChoice }) {
   const messages = [{ role: 'user', content: prompt }]
+  let firstCall = true
 
   // tool_use 루프
   while (true) {
@@ -26,7 +27,10 @@ export async function runAgent({ system, prompt, tools = [], toolHandlers = {}, 
       system,
       messages,
       tools: tools.length > 0 ? tools : undefined,
+      // 첫 번째 호출에만 tool_choice 적용 — 이후엔 Claude가 자유롭게 end_turn 가능
+      tool_choice: (tools.length > 0 && toolChoice && firstCall) ? toolChoice : undefined,
     })
+    firstCall = false
 
     // 응답을 messages에 추가
     messages.push({ role: 'assistant', content: response.content })

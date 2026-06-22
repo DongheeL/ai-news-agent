@@ -44,6 +44,7 @@ ${highItems.map(i => `- ${i.title}: ${i.summary}`).join('\n')}
     system: SYSTEM,
     prompt,
     tools: WRITER_TOOLS,
+    toolChoice: { type: 'any' },
     toolHandlers: {
       publish_newsletter: (input) => {
         capturedResult = input
