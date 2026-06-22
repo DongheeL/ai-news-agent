@@ -21,16 +21,19 @@ export async function runAgent({ system, prompt, tools = [], toolHandlers = {}, 
 
   // tool_use 루프
   while (true) {
+    const appliedToolChoice = (tools.length > 0 && toolChoice && firstCall) ? toolChoice : undefined
     const response = await client.messages.create({
       model,
-      max_tokens: 4096,
+      max_tokens: 8192,
       system,
       messages,
       tools: tools.length > 0 ? tools : undefined,
       // 첫 번째 호출에만 tool_choice 적용 — 이후엔 Claude가 자유롭게 end_turn 가능
-      tool_choice: (tools.length > 0 && toolChoice && firstCall) ? toolChoice : undefined,
+      tool_choice: appliedToolChoice,
     })
     firstCall = false
+
+    console.log(`  [runAgent] stop_reason=${response.stop_reason} tool_choice=${JSON.stringify(appliedToolChoice)} content_types=${response.content.map(b => b.type).join(',')}`)
 
     // 응답을 messages에 추가
     messages.push({ role: 'assistant', content: response.content })
