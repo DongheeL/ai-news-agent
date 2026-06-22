@@ -84,28 +84,44 @@ async function fetchFeed({ url, name }) {
 }
 
 const SYSTEM = `당신은 AI/ML 업계 전문 뉴스 에디터입니다.
-제공된 RSS 피드 원문을 분석해 아래 JSON 형식으로만 응답하세요.
-
-응답 형식 (JSON만, 마크다운 코드블록 없이):
-{
-  "items": [
-    {
-      "title": "뉴스 제목 (한국어로 번역)",
-      "summary": "2~3문장 한국어 요약",
-      "url": "원본 링크",
-      "source": "출처 이름",
-      "tags": ["LLM", "OpenAI"],
-      "importance": "high" | "medium" | "low"
-    }
-  ]
-}
+제공된 RSS 피드 원문을 분석해 중요한 AI/ML 뉴스를 선별하고,
+반드시 process_news_items 도구를 호출해 결과를 저장하세요.
 
 importance 기준:
 - high: 모델 출시/업데이트, 대형 투자/인수, 규제 변화, 업계 지각변동
 - medium: 연구 논문, 기업 전략, 제품 업데이트
 - low: 일반 활용 사례, 칼럼
 
-중복 뉴스는 제거하고 최소 5개, 최대 15개 선별. 반드시 JSON만 반환.`
+중복 뉴스는 제거하고 최소 5개, 최대 15개 선별.
+title은 한국어로 번역, summary는 2~3문장 한국어로 작성.`
+
+const COLLECTOR_TOOLS = [
+  {
+    name: 'process_news_items',
+    description: '선별 및 번역된 뉴스 아이템 목록을 저장합니다.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title:      { type: 'string', description: '한국어 번역 제목' },
+              summary:    { type: 'string', description: '2~3문장 한국어 요약' },
+              url:        { type: 'string', description: '원본 기사 링크' },
+              source:     { type: 'string', description: '출처 이름' },
+              tags:       { type: 'array', items: { type: 'string' }, description: '관련 태그' },
+              importance: { type: 'string', enum: ['high', 'medium', 'low'] },
+            },
+            required: ['title', 'summary', 'url', 'source', 'tags', 'importance'],
+          },
+        },
+      },
+      required: ['items'],
+    },
+  },
+]
 
 /**
  * RSS 피드에서 뉴스 수집 후 Claude로 요약/분류
@@ -138,18 +154,20 @@ export async function collectNews() {
 
   const prompt = `다음은 RSS 피드에서 수집한 최신 AI/ML 뉴스 ${batch.length}건입니다. 중요도에 따라 선별하고 한국어로 요약해주세요.\n\n${feedText}`
 
-  const raw = await runAgent({ system: SYSTEM, prompt })
+  let capturedItems = null
+  await runAgent({
+    system: SYSTEM,
+    prompt,
+    tools: COLLECTOR_TOOLS,
+    toolHandlers: {
+      process_news_items: (input) => {
+        capturedItems = input.items
+        return '저장 완료'
+      },
+    },
+  })
 
-  try {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('JSON not found in response')
-    const parsed = JSON.parse(jsonMatch[0])
-    const items = parsed.items ?? []
-    console.log(`  ✅ ${items.length}개 뉴스 선별 완료`)
-    return items
-  } catch (e) {
-    console.error('  ❌ JSON 파싱 실패:', e.message)
-    console.error('  Raw:', raw.slice(0, 300))
-    throw e
-  }
+  if (!capturedItems) throw new Error('process_news_items 도구가 호출되지 않았습니다')
+  console.log(`  ✅ ${capturedItems.length}개 뉴스 선별 완료`)
+  return capturedItems
 }
