@@ -14,13 +14,13 @@ function renderBlock(block) {
   switch (block.type) {
     case 'heading_2':
       return (
-        <h2 key={block.id} className="text-base font-bold text-white mt-6 mb-3">
+        <h2 key={block.id} className="text-base font-bold text-white mt-8 mb-4 pb-2 border-b border-gray-800">
           {block.heading_2.rich_text.map(t => t.plain_text).join('')}
         </h2>
       )
     case 'paragraph':
       return (
-        <p key={block.id} className="text-gray-300 text-sm leading-relaxed mb-3">
+        <p key={block.id} className="text-gray-300 text-sm leading-relaxed mb-4">
           {block.paragraph.rich_text.map(t => t.plain_text).join('')}
         </p>
       )
@@ -31,16 +31,16 @@ function renderBlock(block) {
       const title = lines[0]
       const rest = lines.slice(1)
       return (
-        <div key={block.id} className={`rounded-lg p-4 mb-3 border ${isHigh ? 'bg-red-950/30 border-red-900/50' : 'bg-gray-900 border-gray-800'}`}>
-          <p className="text-sm font-medium text-white mb-1">{title}</p>
+        <div key={block.id} className={`rounded-lg p-5 mb-5 border-l-[3px] ${isHigh ? 'bg-red-950/20 border border-red-900/40 border-l-red-500' : 'bg-gray-900 border border-gray-700 border-l-blue-700'}`}>
+          <p className="text-sm font-semibold text-white mb-2">{title}</p>
           {rest.map((line, i) => (
-            <p key={i} className="text-xs text-gray-400 leading-relaxed">{line}</p>
+            <p key={i} className="text-xs text-gray-400 leading-relaxed mt-1">{line}</p>
           ))}
         </div>
       )
     }
     case 'divider':
-      return <hr key={block.id} className="border-gray-800 my-4" />
+      return <hr key={block.id} className="border-gray-700 my-6" />
     default:
       return null
   }

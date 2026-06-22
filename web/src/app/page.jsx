@@ -50,12 +50,12 @@ export default async function HomePage() {
         </div>
 
         {/* 목록 */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           {newsletters.map((n, i) => (
             <Link
               key={n.id}
               href={`/issue/${n.id}`}
-              className="block bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-600 hover:bg-gray-800/50 transition-all group"
+              className="block bg-gray-900 border border-gray-700 rounded-xl p-5 hover:border-gray-500 hover:bg-gray-800/50 transition-all group"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
