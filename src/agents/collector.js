@@ -99,7 +99,7 @@ function parseItems(xml, feedName) {
   return items;
 }
 
-async function fetchFeed({ url, source, keywords }) {
+async function fetchFeed({ url, source }) {
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 AI-News-Agent/1.0" },
@@ -107,12 +107,7 @@ async function fetchFeed({ url, source, keywords }) {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const xml = await res.text();
-    let items = parseItems(xml, source);
-    if (keywords?.length) {
-      const pattern = new RegExp(keywords.join("|"), "i");
-      items = items.filter((item) => pattern.test(item.title));
-    }
-    return items;
+    return parseItems(xml, source);
   } catch (e) {
     console.warn(`  ⚠️  ${source} 실패:`, e.message);
     return [];
