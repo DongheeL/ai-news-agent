@@ -202,8 +202,10 @@ export async function collectNews() {
   if (recent.length === 0)
     throw new Error("RSS 피드에서 수집된 기사가 없습니다");
 
-  // 최대 30건을 Claude에 전달
-  const batch = recent.slice(0, 30);
+  // 토·일·월은 72h 확장 빈도 높아 배치 축소
+  const day = new Date().getDay()
+  const batchSize = [0, 1, 6].includes(day) ? 20 : 30
+  const batch = recent.slice(0, batchSize);
   const feedText = batch
     .map(
       (item, i) =>
