@@ -37,7 +37,13 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DEBUG: ${{ github.event.inputs.debug }}
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-        run: node src/index.js
+        run: |
+          for i in 1 2 3; do
+            node src/index.js && exit 0
+            echo "시도 $i 실패, 30초 후 재시도..."
+            sleep 30
+          done
+          exit 1
 
       - name: Upload logs on failure
         if: failure()
