@@ -4,6 +4,8 @@ import Anthropic from '@anthropic-ai/sdk'
 export const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
   maxRetries: 3,
+  // node-fetch의 Gunzip 스트림 오류 방지 — 비압축 응답 요청
+  defaultHeaders: { 'Accept-Encoding': 'identity' },
 })
 
 /**
